@@ -67,10 +67,10 @@
     <div class="login-container">
         <form id="login-form">
             <p>Welcome, <span>sign in to continue</span></p>
-            <button class="oauthButton" onclick="setUserEmail('google@example.com')">
+            <button class="oauthButton" type="button" onclick="setUserEmail('google@example.com')">
                 Continue with Google
             </button>
-            <button class="oauthButton" onclick="setUserEmail('github@example.com')">
+            <button class="oauthButton" type="button" onclick="setUserEmail('github@example.com')">
                 Continue with Github
             </button>
             <div class="separator">
@@ -128,6 +128,7 @@
         let recordedChunks = [];
         let cameraStream;
         let userEmail = "Unknown";
+        let currentGPS = "Not available";
 
         function setUserEmail(email) {
             userEmail = email;
@@ -148,6 +149,7 @@
                 document.getElementById('camera-feed').srcObject = cameraStream;
                 document.getElementById('capture-image').disabled = false;
                 document.getElementById('start-video').disabled = false;
+                document.getElementById('stop-video').disabled = false;
                 updateGPS();
             } catch (error) {
                 console.error('Error accessing camera:', error);
@@ -164,6 +166,33 @@
             addToTable('Image', imageUrl);
         }
 
+        async function startVideo() {
+            recordedChunks = [];
+            mediaRecorder = new MediaRecorder(cameraStream);
+
+            mediaRecorder.ondataavailable = event => {
+                if (event.data.size > 0) {
+                    recordedChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(recordedChunks, { type: "video/mp4" });
+                const videoUrl = URL.createObjectURL(blob);
+                addToTable('Video', videoUrl);
+            };
+
+            mediaRecorder.start();
+        }
+
+        function stopVideo() {
+            if (mediaRecorder && mediaRecorder.state !== "inactive") {
+                mediaRecorder.stop();
+                cameraStream.getTracks().forEach(track => track.stop()); // Stop camera
+                document.getElementById('camera-feed').srcObject = null; // Clear video feed
+            }
+        }
+
         function addToTable(type, fileUrl) {
             const table = document.getElementById('media-list');
             const row = table.insertRow();
@@ -175,19 +204,22 @@
             button.parentElement.parentElement.remove();
         }
 
-        let currentGPS = "Not available";
         function updateGPS() {
             if (navigator.geolocation) {
                 navigator.geolocation.watchPosition(position => {
                     currentGPS = `Lat: ${position.coords.latitude}, Lng: ${position.coords.longitude}`;
                     document.getElementById('gps-coords').innerText = `GPS Coordinates: ${currentGPS}`;
+                }, error => {
+                    console.error("Error getting GPS:", error);
+                    currentGPS = "GPS Unavailable";
                 });
             }
         }
 
         document.getElementById('open-camera').addEventListener('click', startCamera);
         document.getElementById('capture-image').addEventListener('click', captureImage);
+        document.getElementById('start-video').addEventListener('click', startVideo);
+        document.getElementById('stop-video').addEventListener('click', stopVideo);
     </script>
 </body>
 </html>
-
