@@ -3,89 +3,191 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Remote Camera Control</title>
+    <title>Remote Camera and GPS Capture</title>
+    <link rel="stylesheet" href="style.css">
     <style>
         body {
-            font-family: Arial, sans-serif;
-            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
             margin: 0;
-            padding: 0;
             background-color: #f4f4f4;
         }
-        video {
+        .login-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
             width: 100%;
-            max-width: 600px;
-            border-radius: 8px;
-            margin-top: 20px;
+            max-width: 400px;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
         }
-        p {
-            font-size: 18px;
-            color: #333;
+        .oauthButton {
+            width: 100%;
+            padding: 10px;
+            margin: 5px 0;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+            border-radius: 5px;
+            background-color: #007bff;
+            color: white;
+        }
+        .separator {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            margin: 10px 0;
+        }
+        .separator div {
+            flex: 1;
+            height: 1px;
+            background: #ccc;
+        }
+        .separator span {
+            margin: 0 10px;
+            color: #777;
+        }
+        input {
+            width: calc(100% - 20px);
+            padding: 10px;
+            margin: 10px 0;
+            border: 1px solid #ccc;
+            border-radius: 5px;
         }
     </style>
 </head>
 <body>
-    <h1>Remote Camera Control</h1>
-    <video id="video" autoplay></video>
-    <p id="status">Waiting for command...</p>
-
-    <!-- Firebase SDK -->
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
-
+    <div class="login-container">
+        <form id="login-form">
+            <p>Welcome, <span>sign in to continue</span></p>
+            <button class="oauthButton" onclick="setUserEmail('google@example.com')">
+                Continue with Google
+            </button>
+            <button class="oauthButton" onclick="setUserEmail('github@example.com')">
+                Continue with Github
+            </button>
+            <div class="separator">
+                <div></div>
+                <span>OR</span>
+                <div></div>
+            </div>
+            <input type="email" id="user-email" placeholder="Email" required>
+            <button type="button" class="oauthButton" onclick="setUserEmailFromInput()">
+                Continue
+            </button>
+        </form>
+    </div>
+    
+    <header>
+        <h1>Remote Camera and GPS Capture</h1>
+    </header>
+    <main>
+        <section id="controls">
+            <div class="button-group">
+                <button id="open-camera">Open Camera</button>
+                <button id="capture-image" disabled>Capture Image</button>
+                <button id="start-video" disabled>Start Video</button>
+                <button id="stop-video" disabled>Stop Video</button>
+            </div>
+        </section>
+        <section id="camera-container">
+            <video id="camera-feed" autoplay></video>
+            <canvas id="snapshot" style="display:none;"></canvas>
+            <p id="gps-coords">GPS Coordinates: Not available</p>
+        </section>
+        <section id="media-table">
+            <h2>Captured Media</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>File</th>
+                        <th>GPS Coordinates</th>
+                        <th>Timestamp</th>
+                        <th>User Email</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody id="media-list">
+                </tbody>
+            </table>
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2025 Remote Capture System</p>
+    </footer>
     <script>
-        // Firebase configuration (replace with your Firebase project config)
-        const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_AUTH_DOMAIN",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_STORAGE_BUCKET",
-            messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-            appId: "YOUR_APP_ID"
-        };
+        let mediaRecorder;
+        let recordedChunks = [];
+        let cameraStream;
+        let userEmail = "Unknown";
 
-        // Initialize Firebase
-        const app = firebase.initializeApp(firebaseConfig);
-        const db = firebase.firestore();
+        function setUserEmail(email) {
+            userEmail = email;
+            alert(`Signed in as: ${email}`);
+        }
 
-        // Reference to the Firestore document
-        const commandsRef = db.collection("commands").doc("TARGET_DEVICE_ID");
+        function setUserEmailFromInput() {
+            const emailInput = document.getElementById("user-email").value;
+            if (emailInput) {
+                userEmail = emailInput;
+                alert(`Signed in as: ${emailInput}`);
+            }
+        }
 
-        // Camera stream
-        let stream;
-
-        // Function to start the camera
         async function startCamera() {
             try {
-                stream = await navigator.mediaDevices.getUserMedia({ video: true });
-                document.getElementById('video').srcObject = stream;
-                document.getElementById('status').innerText = "Camera started";
+                cameraStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                document.getElementById('camera-feed').srcObject = cameraStream;
+                document.getElementById('capture-image').disabled = false;
+                document.getElementById('start-video').disabled = false;
+                updateGPS();
             } catch (error) {
-                console.error("Error accessing camera:", error);
-                document.getElementById('status').innerText = "Failed to start camera";
+                console.error('Error accessing camera:', error);
             }
         }
 
-        // Function to stop the camera
-        function stopCamera() {
-            if (stream) {
-                stream.getTracks().forEach(track => track.stop());
-                document.getElementById('video').srcObject = null;
-                document.getElementById('status').innerText = "Camera stopped";
+        function captureImage() {
+            const canvas = document.getElementById('snapshot');
+            const video = document.getElementById('camera-feed');
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            canvas.getContext('2d').drawImage(video, 0, 0);
+            const imageUrl = canvas.toDataURL('image/png');
+            addToTable('Image', imageUrl);
+        }
+
+        function addToTable(type, fileUrl) {
+            const table = document.getElementById('media-list');
+            const row = table.insertRow();
+            let fileCellContent = type === 'Image' ? `<img src="${fileUrl}" width="100">` : `<a href="${fileUrl}" target="_blank">View</a>`;
+            row.innerHTML = `<td>${type}</td><td>${fileCellContent}</td><td>${currentGPS}</td><td>${new Date().toLocaleString()}</td><td>${userEmail}</td><td><button onclick="deleteRow(this)">Delete</button></td>`;
+        }
+
+        function deleteRow(button) {
+            button.parentElement.parentElement.remove();
+        }
+
+        let currentGPS = "Not available";
+        function updateGPS() {
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(position => {
+                    currentGPS = `Lat: ${position.coords.latitude}, Lng: ${position.coords.longitude}`;
+                    document.getElementById('gps-coords').innerText = `GPS Coordinates: ${currentGPS}`;
+                });
             }
         }
 
-        // Listen for Firestore updates
-        commandsRef.onSnapshot((doc) => {
-            const data = doc.data();
-            if (data && data.status) {
-                if (data.status === "start") {
-                    startCamera();
-                } else if (data.status === "stop") {
-                    stopCamera();
-                }
-            }
-        });
+        document.getElementById('open-camera').addEventListener('click', startCamera);
+        document.getElementById('capture-image').addEventListener('click', captureImage);
     </script>
 </body>
 </html>
+
